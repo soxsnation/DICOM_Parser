@@ -76,6 +76,7 @@ private:
     QPushButton *myFormatXMLButton;
 
     QCheckBox *myMinDataCheckBox;
+    QCheckBox *myOpenFileCheckBox;
 
     char* fileName;
     char* outfileName;

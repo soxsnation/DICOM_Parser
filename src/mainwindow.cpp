@@ -10,21 +10,12 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QSettings>
-
-//using namespace Decimal::DICOM_Parser;
-
-
+#include <QLabel>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent)
-//    ,ui(new Ui::MainWindow)
 {
     init();
-
-
-
-
-
     createWidgets();
     createLayout();
 
@@ -32,7 +23,6 @@ MainWindow::MainWindow(QWidget *parent) :
 
 MainWindow::~MainWindow()
 {
-//    delete ui;
 }
 
 void MainWindow::createLayout()
@@ -47,15 +37,20 @@ void MainWindow::createLayout()
     l2->addWidget(myOutputFilePath);
     l2->addWidget(mySelectOutDirectoryButton);
 
+    mainLayout->addWidget(new QLabel("Select DICOM File:"));
     mainLayout->addLayout(l);
+    mainLayout->addSpacing(20);
+    mainLayout->addWidget(new QLabel("Select Output Directory:"));
     mainLayout->addLayout(l2);
+    mainLayout->addSpacing(20);
+    mainLayout->addWidget(myOpenFileCheckBox);
     mainLayout->addWidget(myMinDataCheckBox);
     mainLayout->addWidget(myParseButton);
 //    mainLayout->addWidget(myFormatXMLButton);
 
     QWidget *mainWidget = new QWidget();
-    mainWidget->setMinimumWidth(500);
-    mainWidget->setMinimumHeight(250);
+    mainWidget->setMinimumWidth(750);
+    mainWidget->setMinimumHeight(275);
     mainWidget->setLayout(mainLayout);
 
 
@@ -68,16 +63,19 @@ void MainWindow::createWidgets()
     myFileDialog = new QFileDialog();
 
     myFilePath = new QLineEdit(settings->value("open_dir").toString());
-    mySelectFileButton = new QPushButton("Select File");
+    mySelectFileButton = new QPushButton("...");
 
     myOutputFilePath = new QLineEdit(settings->value("export_dir").toString());
-    mySelectOutDirectoryButton = new QPushButton("Output Directory");
+    mySelectOutDirectoryButton = new QPushButton("...");
 
     myParseButton = new QPushButton("Parse to XML");
     myFormatXMLButton = new QPushButton("Format");
 
     myMinDataCheckBox = new QCheckBox("Minify Data");
     myMinDataCheckBox->setToolTip("Data longer then 55 characters will not be written out(UIDs are 53 characters long)");
+
+    myOpenFileCheckBox = new QCheckBox("Open file after parse");
+    myOpenFileCheckBox->setChecked(settings->value("open_file").toBool());
 
 
     connect(mySelectFileButton, SIGNAL(clicked()), this, SLOT(selectFile()));
@@ -98,17 +96,30 @@ void MainWindow::init()
     {
         settings->setValue(QString("export_dir"), QDir::currentPath());
     }
+    if (!settings->allKeys().contains("data_dictionary"))
+    {
+        settings->setValue(QString("data_dictionary"), QString("%1/%2").arg(QDir::currentPath()).arg("dataDictionary.in"));
+    }
+    if (!settings->allKeys().contains("open_file"))
+    {
+        settings->setValue(QString("open_file"), true);
+    }
+    if (!settings->allKeys().contains("minify_length"))
+    {
+        settings->setValue(QString("minify_length"), 60);
+    }
 
 }
 
 QMap<QString, QPair<QString, QString> > MainWindow::loadDataDictionary()
 {
-//    myDataDictionary = new QMap<QString, QPair<QString, QString> >();
+    QSettings* settings = new QSettings("DICOM_Parser.ini", QSettings::IniFormat);
     QMap<QString, QPair<QString, QString> > dd;
-    QFile inFile ("dataDictionary.in");
+    QFile inFile (settings->value("data_dictionary").toString());
     if (!inFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         qDebug() << "Can not open data dictionary";
     }
+
     QTextStream in(&inFile);
     QString temp;
     QStringList temp2;
@@ -270,6 +281,7 @@ xmlItem MainWindow::parse(QXmlStreamReader &xml)
 
 bool MainWindow::writeDICOMXML(xmlItem item)
 {
+    QSettings* settings = new QSettings("DICOM_Parser.ini", QSettings::IniFormat);
     qDebug() << "MainWindow::writeDICOMXML" << item.itemCount();
     QFileInfo fileInfo(myFilePath->text());
     QString outPath = QString("%1/%2.xml").arg(myOutputFilePath->text()).arg(fileInfo.fileName());
@@ -286,15 +298,19 @@ bool MainWindow::writeDICOMXML(xmlItem item)
     file->close();
 
     QDir f(myFilePath->text());
-    qDebug() << "outfileName" << QString("file:///%1").arg(outPath);
-    QDesktopServices::openUrl(QUrl(QString("file:///%1").arg(outPath)));
+//    qDebug() << "outfileName" << QString("file:///%1").arg(outPath);
+
+    if (settings->value("open_file").toBool())
+    {
+        QDesktopServices::openUrl(QUrl(QString("file:///%1").arg(outPath)));
+    }
 
     return true;
 }
 
 void MainWindow::write_xml_item(QXmlStreamWriter &writer, xmlItem item)
 {
-//    qDebug() << "write_xml_item" << item.tag();
+    QSettings* settings = new QSettings("DICOM_Parser.ini", QSettings::IniFormat);
     if (item.itemCount() == 0)
     {
         writer.writeStartElement(item.tag());
@@ -302,7 +318,7 @@ void MainWindow::write_xml_item(QXmlStreamWriter &writer, xmlItem item)
         {
             writer.writeAttribute(QString(), item.attribute(i).tag(), item.attribute(i).value());
         }
-        if (myMinDataCheckBox->isChecked() && item.value().length() > 55)
+        if (myMinDataCheckBox->isChecked() && item.value().length() > settings->value("minify_length").toInt())
         {
             writer.writeCharacters(" ");
         }
@@ -329,19 +345,25 @@ void MainWindow::write_xml_item(QXmlStreamWriter &writer, xmlItem item)
 
 void MainWindow::selectFile()
 {
+    QSettings* settings = new QSettings("DICOM_Parser.ini", QSettings::IniFormat);
     QString path = QFileDialog::getOpenFileName(this, tr("DICOM File"), myFilePath->text());
     if ( path.isNull() == false )
     {
+        settings->setValue(QString("open_dir"), path);
+        QFileInfo fi (path);
         myFilePath->setText(path);
+        myOutputFilePath->setText(fi.absolutePath());
+        settings->setValue(QString("export_dir"), fi.absolutePath());
     }
 }
 
 void MainWindow::selectOutputDirectory()
 {
+    QSettings* settings = new QSettings("DICOM_Parser.ini", QSettings::IniFormat);
     QString path = QFileDialog::getExistingDirectory(this, tr("Output Directory"), myOutputFilePath->text());
     if ( path.isNull() == false )
     {
-//        QDir d(path);
+        settings->setValue(QString("export_dir"), path);
         myOutputFilePath->setText(path);
     }
 }
